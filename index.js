@@ -7,7 +7,10 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const app = express();
 app.use(express.json());
 
-mongoose.connect(process.env.MONGODB_URI).then(() => console.log('DB ulandi'));
+// === DB ===
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('DB ulandi'))
+  .catch(err => console.error('DB xato:', err));
 
 // === MODELLAR ===
 const Product = mongoose.model('Product', new mongoose.Schema({
@@ -30,10 +33,11 @@ const Order = mongoose.model('Order', new mongoose.Schema({
   products: String
 }));
 
-// === ADMIN KOMANDALARI ===
+// === ADMIN ===
 let adminState = {};
 const ADMIN = parseInt(process.env.ADMIN_ID);
 
+// Admin komandalar (oldingi kodingiz)
 bot.command('add', async (ctx) => {
   if (ctx.from.id !== ADMIN) return;
   adminState[ctx.from.id] = { action: 'add', step: 'name' };
@@ -54,7 +58,6 @@ bot.command('delete', async (ctx) => {
   ctx.reply('O\'chirish uchun mahsulotni tanlang:', { reply_markup: { inline_keyboard: keyboard } });
 });
 
-// === CALLBACK ===
 bot.on('callback_query', async (ctx) => {
   const data = ctx.callbackQuery.data;
   if (data.startsWith('edit_')) {
@@ -69,7 +72,6 @@ bot.on('callback_query', async (ctx) => {
   ctx.answerCbQuery();
 });
 
-// === MATN VA RASMLAR ===
 bot.on('text', async (ctx) => {
   const state = adminState[ctx.from.id];
   if (!state || ctx.from.id !== ADMIN) return;
@@ -104,7 +106,7 @@ bot.on('photo', async (ctx) => {
 
 // === /start ===
 bot.start((ctx) => {
-  ctx.reply('Do\'konimizga xush kelibsiz!', {
+  ctx.reply('Do‘konimizga xush kelibsiz!', {
     reply_markup: {
       inline_keyboard: [[
         { text: 'Mahsulotlar', web_app: { url: process.env.MINI_APP_URL } }
@@ -113,19 +115,10 @@ bot.start((ctx) => {
   });
 });
 
-// === WebApp ma'lumotlari ===
+// === WebApp ===
 bot.on('web_app_data', async (ctx) => {
   const data = JSON.parse(ctx.webAppData.data);
   const userId = ctx.from.id;
-
-  if (data.action === 'add_to_cart') {
-    await Cart.updateOne(
-      { userId, productId: data.id },
-      { quantity: data.qty },
-      { upsert: true }
-    );
-    ctx.reply('Savatchaga qo\'shildi');
-  }
 
   if (data.action === 'order') {
     const cart = await Cart.find({ userId }).populate('productId');
@@ -159,8 +152,20 @@ app.get('/api/products', async (req, res) => {
   res.json(products);
 });
 
-app.listen(3000, () => {
-  console.log('Server: http://localhost:3000');
-  bot.launch();
-  console.log('Bot ishga tushdi');
+app.get('/api/image/:id', async (req, res) => {
+  res.redirect(`https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${req.params.id}`);
+});
+
+// === WEBHOOK ENDPOINT ===
+app.post('/webhook', (req, res) => {
+  bot.handleUpdate(req.body, res);
+});
+
+// === SERVER ===
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, async () => {
+  const url = `https://${process.env.RAILWAY_STATIC_URL}/webhook`;
+  await bot.telegram.setWebhook(url);
+  console.log(`WEBHOOK: ${url}`);
+  console.log(`Bot ishlayapti: @${(await bot.telegram.getMe()).username}`);
 });
